@@ -75,14 +75,17 @@ jobs:
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/arm64.apk -o /tmp/apk_arm64
           python3 - << 'PYARM64'
           import re, os, glob, shutil
-          # 1. Strip pageSizeCompat
+          # 1. Strip pageSizeCompat safely
           p = '/tmp/apk_arm64/AndroidManifest.xml'
           if os.path.exists(p):
-              open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))
-          # 2. Rename App in all languages
+              txt = open(p, 'r', encoding='utf-8', errors='ignore').read()
+              open(p, 'w', encoding='utf-8').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', txt))
+          # 2. Rename App only in strings.xml containing app_name
           for f in glob.glob('/tmp/apk_arm64/res/**/strings.xml', recursive=True):
-              open(f, 'w').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', open(f).read()))
-          # 3. Replace Banners & Icons
+              c = open(f, 'r', encoding='utf-8', errors='ignore').read()
+              if 'app_name' in c:
+                  open(f, 'w', encoding='utf-8').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', c))
+          # 3. Replace Banners & Icons safely
           for f in glob.glob('/tmp/apk_arm64/res/**/banner*.png', recursive=True):
               shutil.copy('/tmp/banner.png', f)
           for f in glob.glob('/tmp/apk_arm64/res/**/ic_launcher*.png', recursive=True):
@@ -99,9 +102,12 @@ jobs:
           import re, os, glob, shutil
           p = '/tmp/apk_v7a/AndroidManifest.xml'
           if os.path.exists(p):
-              open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))
+              txt = open(p, 'r', encoding='utf-8', errors='ignore').read()
+              open(p, 'w', encoding='utf-8').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', txt))
           for f in glob.glob('/tmp/apk_v7a/res/**/strings.xml', recursive=True):
-              open(f, 'w').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', open(f).read()))
+              c = open(f, 'r', encoding='utf-8', errors='ignore').read()
+              if 'app_name' in c:
+                  open(f, 'w', encoding='utf-8').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', c))
           for f in glob.glob('/tmp/apk_v7a/res/**/banner*.png', recursive=True):
               shutil.copy('/tmp/banner.png', f)
           for f in glob.glob('/tmp/apk_v7a/res/**/ic_launcher*.png', recursive=True):
