@@ -92,7 +92,7 @@ public class Config {
 
     public static Config vod() {
         Config item = AppDatabase.get().getConfigDao().findOne(0);
-        return item == null ? create(0) : item;
+        return item == null ? create(0, "assets://tv.json", "Caleb") : item;
     }
 
     public static Config live() {
