@@ -32,9 +32,8 @@ jobs:
 
       - name: Extract Apple-Grade Assets
         run: |
-          base64 -d assets/banner.b64 > /tmp/banner_640x360.png
-          base64 -d assets/icon.b64 > /tmp/ic_192.png
-          echo 'Assets extracted successfully!'
+          python3 -c "import base64; open('/tmp/banner.png', 'wb').write(base64.b64decode(open('assets/banner.b64').read())); open('/tmp/icon.png', 'wb').write(base64.b64decode(open('assets/icon.b64').read()))"
+          file /tmp/banner.png /tmp/icon.png
 
       - name: Download Official FongMi 5.7.2 Leanback APKs
         run: |
@@ -57,16 +56,10 @@ jobs:
             sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
           find /tmp/apk_arm64/res -name '*banner*.png' | while read -r f; do
-            cp -f /tmp/banner_640x360.png "$f" || true
+            cp -f /tmp/banner.png "$f" || true
           done
-          find /tmp/apk_arm64/res -name '*ic_launcher*.png' | while read -r f; do
-            cp -f /tmp/ic_192.png "$f" || true
-          done
-          find /tmp/apk_arm64/res -name '*ic_launcher_round*.png' | while read -r f; do
-            cp -f /tmp/ic_192.png "$f" || true
-          done
-          find /tmp/apk_arm64/res -name '*ic_launcher_round*.webp' | while read -r f; do
-            cp -f /tmp/ic_192.png "$f" || true
+          find /tmp/apk_arm64/res -name 'ic_launcher.png' | while read -r f; do
+            cp -f /tmp/icon.png "$f" || true
           done
           java -jar /tmp/apktool.jar b /tmp/apk_arm64 -o /tmp/unaligned_arm64.apk
           zipalign -p -f -v 4 /tmp/unaligned_arm64.apk /tmp/aligned_arm64.apk
@@ -79,16 +72,10 @@ jobs:
             sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
           find /tmp/apk_v7a/res -name '*banner*.png' | while read -r f; do
-            cp -f /tmp/banner_640x360.png "$f" || true
+            cp -f /tmp/banner.png "$f" || true
           done
-          find /tmp/apk_v7a/res -name '*ic_launcher*.png' | while read -r f; do
-            cp -f /tmp/ic_192.png "$f" || true
-          done
-          find /tmp/apk_v7a/res -name '*ic_launcher_round*.png' | while read -r f; do
-            cp -f /tmp/ic_192.png "$f" || true
-          done
-          find /tmp/apk_v7a/res -name '*ic_launcher_round*.webp' | while read -r f; do
-            cp -f /tmp/ic_192.png "$f" || true
+          find /tmp/apk_v7a/res -name 'ic_launcher.png' | while read -r f; do
+            cp -f /tmp/icon.png "$f" || true
           done
           java -jar /tmp/apktool.jar b /tmp/apk_v7a -o /tmp/unaligned_v7a.apk
           zipalign -p -f -v 4 /tmp/unaligned_v7a.apk /tmp/aligned_v7a.apk
