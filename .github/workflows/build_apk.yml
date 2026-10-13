@@ -50,39 +50,49 @@ jobs:
         run: |
           mkdir -p output
 
-          for arch in arm64 v7a; do
-            echo "=== Processing  ==="
-            java -jar /tmp/apktool.jar d -f -s /tmp/bases/.apk -o /tmp/apk_
-
-            # Fix Android 15 pageSizeCompat compatibility with aapt2
-            sed -i 's/android:pageSizeCompat="enabled"//g' /tmp/apk_/AndroidManifest.xml || true
-
-            # Rebrand App Name in all languages
-            find /tmp/apk_/res -name 'strings.xml' | while read -r f; do
-              sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "" || true
-            done
-
-            # Replace TV Banners & Icons with Apple-grade assets
-            find /tmp/apk_/res -name '*banner*.png' | while read -r f; do
-              cp -f /tmp/banner_640x360.png "" || true
-            done
-            find /tmp/apk_/res -name '*ic_launcher*.png' | while read -r f; do
-              cp -f /tmp/ic_192.png "" || true
-            done
-            find /tmp/apk_/res -name '*ic_launcher_round*.png' | while read -r f; do
-              cp -f /tmp/ic_192.png "" || true
-            done
-            find /tmp/apk_/res -name '*ic_launcher_round*.webp' | while read -r f; do
-              cp -f /tmp/ic_192.png "" || true
-            done
-
-            # Build modified APK
-            java -jar /tmp/apktool.jar b /tmp/apk_ -o /tmp/unaligned_.apk
-
-            # Align & Sign
-            zipalign -p -f -v 4 /tmp/unaligned_.apk /tmp/aligned_.apk
-            apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-.apk /tmp/aligned_.apk
+          echo '=== Processing arm64 ==='
+          java -jar /tmp/apktool.jar d -f -s /tmp/bases/arm64.apk -o /tmp/apk_arm64
+          sed -i 's/android:pageSizeCompat="enabled"//g' /tmp/apk_arm64/AndroidManifest.xml || true
+          find /tmp/apk_arm64/res -name 'strings.xml' | while read -r f; do
+            sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
+          find /tmp/apk_arm64/res -name '*banner*.png' | while read -r f; do
+            cp -f /tmp/banner_640x360.png "$f" || true
+          done
+          find /tmp/apk_arm64/res -name '*ic_launcher*.png' | while read -r f; do
+            cp -f /tmp/ic_192.png "$f" || true
+          done
+          find /tmp/apk_arm64/res -name '*ic_launcher_round*.png' | while read -r f; do
+            cp -f /tmp/ic_192.png "$f" || true
+          done
+          find /tmp/apk_arm64/res -name '*ic_launcher_round*.webp' | while read -r f; do
+            cp -f /tmp/ic_192.png "$f" || true
+          done
+          java -jar /tmp/apktool.jar b /tmp/apk_arm64 -o /tmp/unaligned_arm64.apk
+          zipalign -p -f -v 4 /tmp/unaligned_arm64.apk /tmp/aligned_arm64.apk
+          apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-arm64.apk /tmp/aligned_arm64.apk
+
+          echo '=== Processing v7a ==='
+          java -jar /tmp/apktool.jar d -f -s /tmp/bases/v7a.apk -o /tmp/apk_v7a
+          sed -i 's/android:pageSizeCompat="enabled"//g' /tmp/apk_v7a/AndroidManifest.xml || true
+          find /tmp/apk_v7a/res -name 'strings.xml' | while read -r f; do
+            sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
+          done
+          find /tmp/apk_v7a/res -name '*banner*.png' | while read -r f; do
+            cp -f /tmp/banner_640x360.png "$f" || true
+          done
+          find /tmp/apk_v7a/res -name '*ic_launcher*.png' | while read -r f; do
+            cp -f /tmp/ic_192.png "$f" || true
+          done
+          find /tmp/apk_v7a/res -name '*ic_launcher_round*.png' | while read -r f; do
+            cp -f /tmp/ic_192.png "$f" || true
+          done
+          find /tmp/apk_v7a/res -name '*ic_launcher_round*.webp' | while read -r f; do
+            cp -f /tmp/ic_192.png "$f" || true
+          done
+          java -jar /tmp/apktool.jar b /tmp/apk_v7a -o /tmp/unaligned_v7a.apk
+          zipalign -p -f -v 4 /tmp/unaligned_v7a.apk /tmp/aligned_v7a.apk
+          apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-v7a.apk /tmp/aligned_v7a.apk
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
