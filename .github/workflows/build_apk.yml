@@ -1,32 +1,99 @@
 name: Build Caleb TV APK
 
 on:
-  push:
-    branches: [ master, main ]
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build_apk.yml"
+      - "assets/**"
+
+permissions:
+  contents: write
 
 jobs:
   build:
+    name: Build Caleb TV Android APK
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
+          distribution: "temurin"
+          java-version: "17"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Install Android Build Tools
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y zipalign apksigner python3-pip python3-pil wget curl jq || true
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.0/apktool_2.11.0.jar -O /tmp/apktool.jar
 
-      - name: Build APK with Gradle
-        run: ./gradlew assembleRelease --stacktrace
+      - name: Generate Apple-Grade Assets from Caleb Logo
+        run: |
+          base64 -d assets/logo.b64 > /tmp/caleb_raw.png
+          python3 -c "
+          from PIL import Image
+          raw = Image.open('/tmp/caleb_raw.png').convert('RGBA')
+          for w, h, name in [(640, 360, 'banner_640x360.png'), (320, 180, 'banner_320x180.png')]:
+              banner = Image.new('RGBA', (w, h), (255, 255, 255, 255))
+              logo_side = int(h * 0.92)
+              resized = raw.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
+              x = (w - logo_side) // 2
+              y = (h - logo_side) // 2
+              banner.paste(resized, (x, y), resized)
+              banner.save(f'/tmp/{name}')
+          for sz, name in [(48, 'ic_48.png'), (72, 'ic_72.png'), (96, 'ic_96.png'), (144, 'ic_144.png'), (192, 'ic_192.png'), (512, 'ic_512.png')]:
+              ico = raw.resize((sz, sz), Image.Resampling.LANCZOS)
+              ico.save(f'/tmp/{name}')
+          print('Assets generated successfully!')
+          "
 
-      - name: Upload Built APK
+      - name: Download Official FongMi 5.7.2 Leanback APKs
+        run: |
+          mkdir -p /tmp/bases
+          curl -L -o /tmp/bases/arm64.apk "https://github.com/FongMi/Release/releases/download/5.7.2/leanback-arm64_v8a.apk"
+          curl -L -o /tmp/bases/v7a.apk "https://github.com/FongMi/Release/releases/download/5.7.2/leanback-armeabi_v7a.apk"
+
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname "CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN"
+
+      - name: Rebrand & Package APKs
+        run: |
+          mkdir -p output
+          for arch in arm64 v7a; do
+            echo "=== Processing  ==="
+            java -jar /tmp/apktool.jar d -f -s /tmp/bases/.apk -o /tmp/apk_
+            find /tmp/apk_/res -name "strings.xml" -exec sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' {} + || true
+            find /tmp/apk_/res -name "*banner*.png" -exec cp /tmp/banner_640x360.png {} + || true
+            find /tmp/apk_/res -name "*ic_launcher*.png" -exec cp /tmp/ic_192.png {} + || true
+            find /tmp/apk_/res -name "*ic_launcher_round*.png" -exec cp /tmp/ic_192.png {} + || true
+            find /tmp/apk_/res -name "*ic_launcher_round*.webp" -exec cp /tmp/ic_192.png {} + || true
+            java -jar /tmp/apktool.jar b /tmp/apk_ -o /tmp/unaligned_.apk
+            zipalign -p -f -v 4 /tmp/unaligned_.apk /tmp/aligned_.apk
+            apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-.apk /tmp/aligned_.apk
+          done
+
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Caleb-TV-APK
-          path: app/build/outputs/apk/**/*.apk
+          path: output/*.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, "refs/tags/") || github.event_name == "workflow_dispatch" || github.ref == "refs/heads/fongmi"
+        with:
+          tag_name: v1.0.0-Caleb
+          name: Caleb TV v1.0.0
+          body: |
+            ## 🎬 Caleb TV 专属投影仪版
+            - **视觉设计**：全新 Apple 极简风格，霓虹发光 Caleb 专属图标与大屏 16:9 横版海报
+            - **应用名称**：Caleb
+            - **底层引擎**：基于 FongMi 5.7.2 纯净硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
+            - **架构支持**：
+              - Caleb-TV-arm64.apk：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
+              - Caleb-TV-v7a.apk：适用于 32 位通用电视/投影芯片
+          files: output/*.apk
