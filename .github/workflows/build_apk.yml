@@ -25,14 +25,36 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Android Build Tools
+      - name: Install Android Build Tools & Python Pillow
         run: |
           sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl jq || true
+          pip install --break-system-packages pillow || sudo apt-get install -y python3-pil
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.0/apktool_2.11.0.jar -O /tmp/apktool.jar
 
       - name: Extract Apple-Grade Assets
         run: |
-          python3 -c "import base64; open('/tmp/banner.png', 'wb').write(base64.b64decode(open('assets/banner.b64').read())); open('/tmp/icon.png', 'wb').write(base64.b64decode(open('assets/icon.b64').read()))"
+          python3 - << 'PYEOF'
+          import base64
+          from PIL import Image
+
+          raw_bytes = base64.b64decode(open('assets/logo.b64').read().strip())
+          with open('/tmp/raw.png', 'wb') as f:
+              f.write(raw_bytes)
+
+          raw = Image.open('/tmp/raw.png').convert('RGBA')
+
+          # 16:9 Banner
+          banner = Image.new('RGBA', (640, 360), (255, 255, 255, 255))
+          logo_side = int(360 * 0.92)
+          resized = raw.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
+          banner.paste(resized, ((640 - logo_side) // 2, (360 - logo_side) // 2), resized)
+          banner.save('/tmp/banner.png')
+
+          # App Icon
+          ico = raw.resize((192, 192), Image.Resampling.LANCZOS)
+          ico.save('/tmp/icon.png')
+          print('Successfully generated Apple-grade banner and icon!')
+          PYEOF
           file /tmp/banner.png /tmp/icon.png
 
       - name: Download Official FongMi 5.7.2 Leanback APKs
