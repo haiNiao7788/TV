@@ -57,11 +57,11 @@ jobs:
           PYEOF
           file /tmp/banner.png /tmp/icon.png
 
-      - name: Download Official FongMi 5.7.2 Leanback APKs
+      - name: Download Official FongMi Stable Leanback APKs
         run: |
           mkdir -p /tmp/bases
-          curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.2/leanback-arm64_v8a.apk'
-          curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.2/leanback-armeabi_v7a.apk'
+          curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-arm64_v8a.apk'
+          curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-armeabi_v7a.apk'
 
       - name: Generate Release Keystore
         run: |
@@ -73,7 +73,7 @@ jobs:
 
           echo '=== Processing arm64 ==='
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/arm64.apk -o /tmp/apk_arm64
-          grep -v 'pageSizeCompat' /tmp/apk_arm64/AndroidManifest.xml > /tmp/apk_arm64/manifest.tmp && mv /tmp/apk_arm64/manifest.tmp /tmp/apk_arm64/AndroidManifest.xml
+          python3 -c "import re, os; p='/tmp/apk_arm64/AndroidManifest.xml'; open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))" || true
           find /tmp/apk_arm64/res -name 'strings.xml' | while read -r f; do
             sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
@@ -89,7 +89,7 @@ jobs:
 
           echo '=== Processing v7a ==='
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/v7a.apk -o /tmp/apk_v7a
-          grep -v 'pageSizeCompat' /tmp/apk_v7a/AndroidManifest.xml > /tmp/apk_v7a/manifest.tmp && mv /tmp/apk_v7a/manifest.tmp /tmp/apk_v7a/AndroidManifest.xml
+          python3 -c "import re, os; p='/tmp/apk_v7a/AndroidManifest.xml'; open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))" || true
           find /tmp/apk_v7a/res -name 'strings.xml' | while read -r f; do
             sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
@@ -119,7 +119,7 @@ jobs:
             ## 🎬 Caleb TV 专属投影仪版
             - **视觉设计**：全新 Apple 极简风格，霓虹发光 Caleb 专属图标与大屏 16:9 横版海报
             - **应用名称**：Caleb
-            - **底层引擎**：基于 FongMi 5.7.2 纯净硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
+            - **底层引擎**：基于 FongMi 5.7.0 长期稳定版硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
             - **架构支持**：
               - ：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
               - ：适用于 32 位通用电视/投影芯片
