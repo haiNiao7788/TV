@@ -84,7 +84,7 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, "refs/tags/") || github.event_name == "workflow_dispatch" || github.ref == "refs/heads/fongmi"
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/fongmi'
         with:
           tag_name: v1.0.0-Caleb
           name: Caleb TV v1.0.0
