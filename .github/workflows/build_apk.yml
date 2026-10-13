@@ -5,7 +5,8 @@ on:
   push:
     paths:
       - '.github/workflows/build_apk.yml'
-      - 'assets/**'
+      - 'app/src/main/assets/tv.json'
+      - 'app/src/main/java/com/fongmi/android/tv/bean/Config.java'
 
 permissions:
   contents: write
@@ -25,10 +26,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Android Build Tools & Python Pillow
+      - name: Install Android Build Tools & Python
         run: |
           sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl jq || true
           pip install --break-system-packages pillow || sudo apt-get install -y python3-pil
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.0/apktool_2.11.0.jar -O /tmp/apktool.jar
 
       - name: Extract Apple-Grade Assets
         run: |
@@ -54,27 +56,39 @@ jobs:
           ico.save('/tmp/icon.png')
           print('Successfully generated Apple-grade banner and icon!')
           PYEOF
-          file /tmp/banner.png /tmp/icon.png
 
-      - name: Download Official FongMi Stable Leanback APKs
-        run: |
-          mkdir -p /tmp/bases
-          curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-arm64_v8a.apk'
-          curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-armeabi_v7a.apk'
-
-      - name: Generate Release Keystore
+      - name: Generate Release Keystore & Local Properties
         run: |
           keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname 'CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN'
+          cat << 'EOFP' > local.properties
+storeFile=/tmp/caleb.jks
+keyAlias=caleb
+storePassword=calebtv
+EOFP
+          chmod +x gradlew
 
-      - name: Rebrand & Package APKs (Lossless Direct Injection)
+      - name: Try Gradle Official Source Build
+        id: gradle_build
+        continue-on-error: true
         run: |
           mkdir -p output
+          ./gradlew assembleLeanbackRelease --stacktrace --no-daemon
+          find app/build/outputs/apk -name "*.apk" -exec cp {} output/ \;
+
+      - name: Fallback to Lossless Direct Injection if Gradle Fails
+        if: steps.gradle_build.outcome != 'success'
+        run: |
+          echo "Gradle build skipped or failed, using lossless direct injection engine..."
+          mkdir -p /tmp/bases output
+          curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-arm64_v8a.apk'
+          curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-armeabi_v7a.apk'
 
           python3 - << 'PYINJECT'
           import zipfile, io, os
 
           banner_bytes = open('/tmp/banner.png', 'rb').read()
           icon_bytes = open('/tmp/icon.png', 'rb').read()
+          tv_json_bytes = open('app/src/main/assets/tv.json', 'rb').read()
 
           for arch in ['arm64', 'v7a']:
               in_apk = f'/tmp/bases/{arch}.apk'
@@ -82,9 +96,11 @@ jobs:
               print(f'Injecting Apple-grade assets into {arch}...')
 
               with zipfile.ZipFile(in_apk, 'r') as zin, zipfile.ZipFile(temp_apk, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+                  # Inject internal tv.json so it supports assets://tv.json
+                  zout.writestr('assets/tv.json', tv_json_bytes)
+
                   for item in zin.infolist():
                       fname = item.filename
-                      # Strip previous signature to allow clean resigning
                       if fname.startswith('META-INF/') and (fname.endswith('.SF') or fname.endswith('.RSA') or fname.endswith('.MF')):
                           continue
 
@@ -94,7 +110,6 @@ jobs:
                           zout.writestr(item, icon_bytes)
                       elif fname == 'resources.arsc':
                           data = zin.read(fname)
-                          # Replace Chinese app label if present
                           data = data.replace('影视'.encode('utf-8'), 'Caleb'.encode('utf-8') + b' ')
                           zout.writestr(item, data)
                       else:
@@ -106,7 +121,6 @@ jobs:
               os.system(f'apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out {final_apk} {aligned_apk}')
               print(f'Successfully built {final_apk}!')
           PYINJECT
-          ls -lh output/*.apk
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -121,10 +135,11 @@ jobs:
           tag_name: v1.0.0-Caleb
           name: Caleb TV v1.0.0
           body: |
-            ## 🎬 Caleb TV 专属投影仪版
+            ## 🎬 Caleb TV 专属投影仪版 (开箱即用免配置)
             - **视觉设计**：全新 Apple 极简风格，霓虹发光 Caleb 专属图标与大屏 16:9 横版海报
             - **应用名称**：Caleb
-            - **底层引擎**：基于 FongMi 5.7.0 长期稳定版硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
+            - **内置接口**：已内置 LibreTV 极速解析源与聚合采集站（非凡、量子、无尽、极速蓝光），零门槛开箱即播
+            - **底层引擎**：基于 FongMi 纯净硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
             - **架构支持**：
               - Caleb-TV-arm64.apk：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
               - Caleb-TV-v7a.apk：适用于 32 位通用电视/投影芯片
