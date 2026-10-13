@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/build_apk.yml"
-      - "assets/**"
+      - '.github/workflows/build_apk.yml'
+      - 'assets/**'
 
 permissions:
   contents: write
@@ -22,43 +22,29 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "17"
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Install Android Build Tools
         run: |
-          DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y zipalign apksigner python3-pip python3-pil wget curl jq || true
+          sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl jq || true
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.0/apktool_2.11.0.jar -O /tmp/apktool.jar
 
-      - name: Generate Apple-Grade Assets from Caleb Logo
+      - name: Extract Apple-Grade Assets
         run: |
-          base64 -d assets/logo.b64 > /tmp/caleb_raw.png
-          python3 -c "
-          from PIL import Image
-          raw = Image.open('/tmp/caleb_raw.png').convert('RGBA')
-          for w, h, name in [(640, 360, 'banner_640x360.png'), (320, 180, 'banner_320x180.png')]:
-              banner = Image.new('RGBA', (w, h), (255, 255, 255, 255))
-              logo_side = int(h * 0.92)
-              resized = raw.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
-              x = (w - logo_side) // 2
-              y = (h - logo_side) // 2
-              banner.paste(resized, (x, y), resized)
-              banner.save(f'/tmp/{name}')
-          for sz, name in [(48, 'ic_48.png'), (72, 'ic_72.png'), (96, 'ic_96.png'), (144, 'ic_144.png'), (192, 'ic_192.png'), (512, 'ic_512.png')]:
-              ico = raw.resize((sz, sz), Image.Resampling.LANCZOS)
-              ico.save(f'/tmp/{name}')
-          print('Assets generated successfully!')
-          "
+          base64 -d assets/banner.b64 > /tmp/banner_640x360.png
+          base64 -d assets/icon.b64 > /tmp/ic_192.png
+          echo 'Assets extracted successfully!'
 
       - name: Download Official FongMi 5.7.2 Leanback APKs
         run: |
           mkdir -p /tmp/bases
-          curl -L -o /tmp/bases/arm64.apk "https://github.com/FongMi/Release/releases/download/5.7.2/leanback-arm64_v8a.apk"
-          curl -L -o /tmp/bases/v7a.apk "https://github.com/FongMi/Release/releases/download/5.7.2/leanback-armeabi_v7a.apk"
+          curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.2/leanback-arm64_v8a.apk'
+          curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.2/leanback-armeabi_v7a.apk'
 
       - name: Generate Release Keystore
         run: |
-          keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname "CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN"
+          keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname 'CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN'
 
       - name: Rebrand & Package APKs
         run: |
@@ -94,6 +80,6 @@ jobs:
             - **应用名称**：Caleb
             - **底层引擎**：基于 FongMi 5.7.2 纯净硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
             - **架构支持**：
-              - Caleb-TV-arm64.apk：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
-              - Caleb-TV-v7a.apk：适用于 32 位通用电视/投影芯片
+              - ：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
+              - ：适用于 32 位通用电视/投影芯片
           files: output/*.apk
