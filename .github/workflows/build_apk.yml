@@ -30,7 +30,6 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl jq || true
           pip install --break-system-packages pillow || sudo apt-get install -y python3-pil
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.0/apktool_2.11.0.jar -O /tmp/apktool.jar
 
       - name: Extract Apple-Grade Assets
         run: |
@@ -60,11 +59,9 @@ jobs:
       - name: Generate Release Keystore & Local Properties
         run: |
           keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname 'CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN'
-          cat << 'EOFP' > local.properties
-storeFile=/tmp/caleb.jks
-keyAlias=caleb
-storePassword=calebtv
-EOFP
+          echo "storeFile=/tmp/caleb.jks" > local.properties
+          echo "keyAlias=caleb" >> local.properties
+          echo "storePassword=calebtv" >> local.properties
           chmod +x gradlew
 
       - name: Try Gradle Official Source Build
@@ -73,7 +70,7 @@ EOFP
         run: |
           mkdir -p output
           ./gradlew assembleLeanbackRelease --stacktrace --no-daemon
-          find app/build/outputs/apk -name "*.apk" -exec cp {} output/ \;
+          find app/build/outputs/apk -name "*.apk" -exec cp {} output/ ';'
 
       - name: Fallback to Lossless Direct Injection if Gradle Fails
         if: steps.gradle_build.outcome != 'success'
