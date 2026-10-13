@@ -73,7 +73,7 @@ jobs:
 
           echo '=== Processing arm64 ==='
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/arm64.apk -o /tmp/apk_arm64
-          sed -i 's/android:pageSizeCompat="enabled"//g' /tmp/apk_arm64/AndroidManifest.xml || true
+          grep -v 'pageSizeCompat' /tmp/apk_arm64/AndroidManifest.xml > /tmp/apk_arm64/manifest.tmp && mv /tmp/apk_arm64/manifest.tmp /tmp/apk_arm64/AndroidManifest.xml
           find /tmp/apk_arm64/res -name 'strings.xml' | while read -r f; do
             sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
@@ -89,7 +89,7 @@ jobs:
 
           echo '=== Processing v7a ==='
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/v7a.apk -o /tmp/apk_v7a
-          sed -i 's/android:pageSizeCompat="enabled"//g' /tmp/apk_v7a/AndroidManifest.xml || true
+          grep -v 'pageSizeCompat' /tmp/apk_v7a/AndroidManifest.xml > /tmp/apk_v7a/manifest.tmp && mv /tmp/apk_v7a/manifest.tmp /tmp/apk_v7a/AndroidManifest.xml
           find /tmp/apk_v7a/res -name 'strings.xml' | while read -r f; do
             sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
           done
