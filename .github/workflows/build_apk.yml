@@ -73,32 +73,41 @@ jobs:
 
           echo '=== Processing arm64 ==='
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/arm64.apk -o /tmp/apk_arm64
-          python3 -c "import re, os; p='/tmp/apk_arm64/AndroidManifest.xml'; open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))" || true
-          find /tmp/apk_arm64/res -name 'strings.xml' | while read -r f; do
-            sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
-          done
-          find /tmp/apk_arm64/res -name '*banner*.png' | while read -r f; do
-            cp -f /tmp/banner.png "$f" || true
-          done
-          find /tmp/apk_arm64/res -name 'ic_launcher.png' | while read -r f; do
-            cp -f /tmp/icon.png "$f" || true
-          done
+          python3 - << 'PYARM64'
+          import re, os, glob, shutil
+          # 1. Strip pageSizeCompat
+          p = '/tmp/apk_arm64/AndroidManifest.xml'
+          if os.path.exists(p):
+              open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))
+          # 2. Rename App in all languages
+          for f in glob.glob('/tmp/apk_arm64/res/**/strings.xml', recursive=True):
+              open(f, 'w').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', open(f).read()))
+          # 3. Replace Banners & Icons
+          for f in glob.glob('/tmp/apk_arm64/res/**/banner*.png', recursive=True):
+              shutil.copy('/tmp/banner.png', f)
+          for f in glob.glob('/tmp/apk_arm64/res/**/ic_launcher*.png', recursive=True):
+              shutil.copy('/tmp/icon.png', f)
+          print('arm64 resources updated successfully!')
+          PYARM64
           java -jar /tmp/apktool.jar b /tmp/apk_arm64 -o /tmp/unaligned_arm64.apk
           zipalign -p -f -v 4 /tmp/unaligned_arm64.apk /tmp/aligned_arm64.apk
           apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-arm64.apk /tmp/aligned_arm64.apk
 
           echo '=== Processing v7a ==='
           java -jar /tmp/apktool.jar d -f -s /tmp/bases/v7a.apk -o /tmp/apk_v7a
-          python3 -c "import re, os; p='/tmp/apk_v7a/AndroidManifest.xml'; open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))" || true
-          find /tmp/apk_v7a/res -name 'strings.xml' | while read -r f; do
-            sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Caleb<\/string>/g' "$f" || true
-          done
-          find /tmp/apk_v7a/res -name '*banner*.png' | while read -r f; do
-            cp -f /tmp/banner.png "$f" || true
-          done
-          find /tmp/apk_v7a/res -name 'ic_launcher.png' | while read -r f; do
-            cp -f /tmp/icon.png "$f" || true
-          done
+          python3 - << 'PYV7A'
+          import re, os, glob, shutil
+          p = '/tmp/apk_v7a/AndroidManifest.xml'
+          if os.path.exists(p):
+              open(p, 'w').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', open(p).read()))
+          for f in glob.glob('/tmp/apk_v7a/res/**/strings.xml', recursive=True):
+              open(f, 'w').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', open(f).read()))
+          for f in glob.glob('/tmp/apk_v7a/res/**/banner*.png', recursive=True):
+              shutil.copy('/tmp/banner.png', f)
+          for f in glob.glob('/tmp/apk_v7a/res/**/ic_launcher*.png', recursive=True):
+              shutil.copy('/tmp/icon.png', f)
+          print('v7a resources updated successfully!')
+          PYV7A
           java -jar /tmp/apktool.jar b /tmp/apk_v7a -o /tmp/unaligned_v7a.apk
           zipalign -p -f -v 4 /tmp/unaligned_v7a.apk /tmp/aligned_v7a.apk
           apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-v7a.apk /tmp/aligned_v7a.apk
