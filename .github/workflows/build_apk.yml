@@ -29,7 +29,6 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl jq || true
           pip install --break-system-packages pillow || sudo apt-get install -y python3-pil
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.0/apktool_2.11.0.jar -O /tmp/apktool.jar
 
       - name: Extract Apple-Grade Assets
         run: |
@@ -67,56 +66,47 @@ jobs:
         run: |
           keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname 'CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN'
 
-      - name: Rebrand & Package APKs
+      - name: Rebrand & Package APKs (Lossless Direct Injection)
         run: |
           mkdir -p output
 
-          echo '=== Processing arm64 ==='
-          java -jar /tmp/apktool.jar d -f -s /tmp/bases/arm64.apk -o /tmp/apk_arm64
-          python3 - << 'PYARM64'
-          import re, os, glob, shutil
-          # 1. Strip pageSizeCompat safely
-          p = '/tmp/apk_arm64/AndroidManifest.xml'
-          if os.path.exists(p):
-              txt = open(p, 'r', encoding='utf-8', errors='ignore').read()
-              open(p, 'w', encoding='utf-8').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', txt))
-          # 2. Rename App only in strings.xml containing app_name
-          for f in glob.glob('/tmp/apk_arm64/res/**/strings.xml', recursive=True):
-              c = open(f, 'r', encoding='utf-8', errors='ignore').read()
-              if 'app_name' in c:
-                  open(f, 'w', encoding='utf-8').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', c))
-          # 3. Replace Banners & Icons safely
-          for f in glob.glob('/tmp/apk_arm64/res/**/banner*.png', recursive=True):
-              shutil.copy('/tmp/banner.png', f)
-          for f in glob.glob('/tmp/apk_arm64/res/**/ic_launcher*.png', recursive=True):
-              shutil.copy('/tmp/icon.png', f)
-          print('arm64 resources updated successfully!')
-          PYARM64
-          java -jar /tmp/apktool.jar b /tmp/apk_arm64 -o /tmp/unaligned_arm64.apk
-          zipalign -p -f -v 4 /tmp/unaligned_arm64.apk /tmp/aligned_arm64.apk
-          apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-arm64.apk /tmp/aligned_arm64.apk
+          python3 - << 'PYINJECT'
+          import zipfile, io, os
 
-          echo '=== Processing v7a ==='
-          java -jar /tmp/apktool.jar d -f -s /tmp/bases/v7a.apk -o /tmp/apk_v7a
-          python3 - << 'PYV7A'
-          import re, os, glob, shutil
-          p = '/tmp/apk_v7a/AndroidManifest.xml'
-          if os.path.exists(p):
-              txt = open(p, 'r', encoding='utf-8', errors='ignore').read()
-              open(p, 'w', encoding='utf-8').write(re.sub(r'\s*android:pageSizeCompat="[^"]*"', '', txt))
-          for f in glob.glob('/tmp/apk_v7a/res/**/strings.xml', recursive=True):
-              c = open(f, 'r', encoding='utf-8', errors='ignore').read()
-              if 'app_name' in c:
-                  open(f, 'w', encoding='utf-8').write(re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Caleb</string>', c))
-          for f in glob.glob('/tmp/apk_v7a/res/**/banner*.png', recursive=True):
-              shutil.copy('/tmp/banner.png', f)
-          for f in glob.glob('/tmp/apk_v7a/res/**/ic_launcher*.png', recursive=True):
-              shutil.copy('/tmp/icon.png', f)
-          print('v7a resources updated successfully!')
-          PYV7A
-          java -jar /tmp/apktool.jar b /tmp/apk_v7a -o /tmp/unaligned_v7a.apk
-          zipalign -p -f -v 4 /tmp/unaligned_v7a.apk /tmp/aligned_v7a.apk
-          apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out output/Caleb-TV-v7a.apk /tmp/aligned_v7a.apk
+          banner_bytes = open('/tmp/banner.png', 'rb').read()
+          icon_bytes = open('/tmp/icon.png', 'rb').read()
+
+          for arch in ['arm64', 'v7a']:
+              in_apk = f'/tmp/bases/{arch}.apk'
+              temp_apk = f'/tmp/rebranded_{arch}.apk'
+              print(f'Injecting Apple-grade assets into {arch}...')
+
+              with zipfile.ZipFile(in_apk, 'r') as zin, zipfile.ZipFile(temp_apk, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+                  for item in zin.infolist():
+                      fname = item.filename
+                      # Strip previous signature to allow clean resigning
+                      if fname.startswith('META-INF/') and (fname.endswith('.SF') or fname.endswith('.RSA') or fname.endswith('.MF')):
+                          continue
+
+                      if 'banner' in fname.lower() and fname.endswith('.png'):
+                          zout.writestr(item, banner_bytes)
+                      elif 'ic_launcher' in fname.lower() and fname.endswith('.png'):
+                          zout.writestr(item, icon_bytes)
+                      elif fname == 'resources.arsc':
+                          data = zin.read(fname)
+                          # Replace Chinese app label if present
+                          data = data.replace('影视'.encode('utf-8'), 'Caleb'.encode('utf-8') + b' ')
+                          zout.writestr(item, data)
+                      else:
+                          zout.writestr(item, zin.read(fname))
+
+              aligned_apk = f'/tmp/aligned_{arch}.apk'
+              final_apk = f'output/Caleb-TV-{arch}.apk'
+              os.system(f'zipalign -p -f -v 4 {temp_apk} {aligned_apk}')
+              os.system(f'apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out {final_apk} {aligned_apk}')
+              print(f'Successfully built {final_apk}!')
+          PYINJECT
+          ls -lh output/*.apk
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -136,6 +126,6 @@ jobs:
             - **应用名称**：Caleb
             - **底层引擎**：基于 FongMi 5.7.0 长期稳定版硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
             - **架构支持**：
-              - ：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
-              - ：适用于 32 位通用电视/投影芯片
+              - Caleb-TV-arm64.apk：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
+              - Caleb-TV-v7a.apk：适用于 32 位通用电视/投影芯片
           files: output/*.apk
