@@ -62,8 +62,9 @@ jobs:
         run: |
           mkdir -p /tmp/bases output
           
-          curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-arm64_v8a.apk'
-          curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-armeabi_v7a.apk'
+          # 升级至官方最新 5.7.4 稳定版底包（彻底修复 5.7.0 的核心卡死与内存死锁 bug）
+          curl -f -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.4/leanback-arm64_v8a.apk'
+          curl -f -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.4/leanback-armeabi_v7a.apk'
 
           python3 - << 'PYINJECT'
           import zipfile, os
@@ -71,7 +72,7 @@ jobs:
           banner_bytes = open('/tmp/banner.png', 'rb').read()
           icon_bytes = open('/tmp/icon.png', 'rb').read()
           
-          # 等长精准 URL 替换（59字节与58字节），彻底切除更新逻辑且绝不破坏 DEX 文件偏移
+          # 等长精准 URL 替换（59字节与58字节），彻底切除更新链路且不影响 DEX 文件结构与偏移
           old_url1 = b'https://api.github.com/repos/FongMi/Release/releases/latest'
           new_url1 = b'http://127.0.0.1:9999/disabled_update_calebtv_never_check_x'
           
@@ -85,7 +86,7 @@ jobs:
           for arch in ['arm64', 'v7a']:
               in_apk = f'/tmp/bases/{arch}.apk'
               temp_apk = f'/tmp/patched_{arch}.apk'
-              print(f'Patching & branding {arch}...')
+              print(f'Patching & branding {arch} (Size: {os.path.getsize(in_apk)} bytes)...')
 
               with zipfile.ZipFile(in_apk, 'r') as zin, zipfile.ZipFile(temp_apk, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
                   if tv_json_bytes:
@@ -100,14 +101,14 @@ jobs:
                           zout.writestr(item, banner_bytes)
                       elif 'ic_launcher' in fname.lower() and fname.endswith('.png'):
                           zout.writestr(item, icon_bytes)
-                      elif fname == 'classes.dex':
+                      elif fname.startswith('classes') and fname.endswith('.dex'):
                           dex_data = zin.read(fname)
-                          # 切断更新检查
-                          dex_data = dex_data.replace(old_url1, new_url1)
-                          dex_data = dex_data.replace(old_url2, new_url2)
+                          if old_url1 in dex_data:
+                              dex_data = dex_data.replace(old_url1, new_url1)
+                          if old_url2 in dex_data:
+                              dex_data = dex_data.replace(old_url2, new_url2)
                           zout.writestr(item, dex_data)
                       else:
-                          # 保持 resources.arsc 等原生文件完全不被破坏
                           zout.writestr(item, zin.read(fname))
 
               aligned_apk = f'/tmp/aligned_{arch}.apk'
@@ -128,13 +129,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/fongmi'
         with:
           tag_name: v1.0.1-Caleb
-          name: Caleb TV v1.0.1 (纯净无更新·防卡死版)
+          name: Caleb TV v1.0.1 (5.7.4 稳定纯净版)
           body: |
             ## 🎬 Caleb TV 专属投影仪版 (v1.0.1)
-            - **彻底解除更新**：底层已彻底掐断 GitHub API 检测链路，永不弹窗提示更新。
-            - **告别卡死**：原生物理级资源对齐，保留原生资源表架构，杜绝底层死锁。
+            - **底层核心升级**：升级至 5.7.4 纯净内核，彻底根除 5.7.0 的核心卡死与内存死锁。
+            - **拔除更新检测**：底层掐断 GitHub 版本接口，永不弹窗强更。
             - **视觉设计**：全新 Apple 极简暗黑风格，霓虹发光专属图标与 16:9 横版海报。
             - **安装建议（重要）**：
-              - ⚠️ **投影仪用户请务必优先安装**：`Caleb-TV-v7a.apk`（完美兼容 32 位 Android 运行时，流畅不掉帧）。
+              - ⚠️ **投影仪用户请务必优先安装**：`Caleb-TV-v7a.apk`（完美兼容 32 位 Android 底层）。
               - 64 位高性能电视盒子：可安装 `Caleb-TV-arm64.apk`。
           files: output/*.apk
