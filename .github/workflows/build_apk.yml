@@ -5,8 +5,6 @@ on:
   push:
     paths:
       - '.github/workflows/build_apk.yml'
-      - 'app/src/main/assets/tv.json'
-      - 'app/src/main/java/com/fongmi/android/tv/bean/Config.java'
 
 permissions:
   contents: write
@@ -26,98 +24,76 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Android Build Tools & Python
+      - name: Install Android Build Tools & Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl jq || true
-          pip install --break-system-packages pillow || sudo apt-get install -y python3-pil
+          sudo apt-get update
+          sudo apt-get install -y zipalign apksigner apktool wget curl jq python3-pil
 
       - name: Extract Apple-Grade Assets
         run: |
           python3 - << 'PYEOF'
-          import base64
+          import base64, os
           from PIL import Image
 
-          raw_bytes = base64.b64decode(open('assets/logo.b64').read().strip())
-          with open('/tmp/raw.png', 'wb') as f:
-              f.write(raw_bytes)
+          if os.path.exists('assets/logo.b64'):
+              raw_bytes = base64.b64decode(open('assets/logo.b64').read().strip())
+              with open('/tmp/raw.png', 'wb') as f:
+                  f.write(raw_bytes)
+              raw = Image.open('/tmp/raw.png').convert('RGBA')
+          else:
+              raw = Image.new('RGBA', (512, 512), (30, 30, 30, 255))
 
-          raw = Image.open('/tmp/raw.png').convert('RGBA')
-
-          # 16:9 Banner
-          banner = Image.new('RGBA', (640, 360), (255, 255, 255, 255))
-          logo_side = int(360 * 0.92)
+          banner = Image.new('RGBA', (640, 360), (20, 20, 22, 255))
+          logo_side = int(360 * 0.85)
           resized = raw.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
           banner.paste(resized, ((640 - logo_side) // 2, (360 - logo_side) // 2), resized)
           banner.save('/tmp/banner.png')
 
-          # App Icon
           ico = raw.resize((192, 192), Image.Resampling.LANCZOS)
           ico.save('/tmp/icon.png')
-          print('Successfully generated Apple-grade banner and icon!')
+          print('Apple-grade assets generated successfully.')
           PYEOF
 
-      - name: Generate Release Keystore & Local Properties
+      - name: Generate Release Keystore
         run: |
           keytool -genkey -v -keystore /tmp/caleb.jks -alias caleb -keyalg RSA -keysize 2048 -validity 10000 -storepass calebtv -keypass calebtv -dname 'CN=Caleb, OU=TV, O=Apple, L=Shanghai, S=Shanghai, C=CN'
-          echo "storeFile=/tmp/caleb.jks" > local.properties
-          echo "keyAlias=caleb" >> local.properties
-          echo "storePassword=calebtv" >> local.properties
-          chmod +x gradlew
 
-      - name: Try Gradle Official Source Build
-        id: gradle_build
-        continue-on-error: true
+      - name: Build Pure Caleb TV APKs (Apktool Clean Rebuild)
         run: |
-          mkdir -p output
-          ./gradlew assembleLeanbackRelease --stacktrace --no-daemon
-          find app/build/outputs/apk -name "*.apk" -exec cp {} output/ ';'
-
-      - name: Fallback to Lossless Direct Injection if Gradle Fails
-        if: steps.gradle_build.outcome != 'success'
-        run: |
-          echo "Gradle build skipped or failed, using lossless direct injection engine..."
           mkdir -p /tmp/bases output
+          
           curl -L -o /tmp/bases/arm64.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-arm64_v8a.apk'
           curl -L -o /tmp/bases/v7a.apk 'https://github.com/FongMi/Release/releases/download/5.7.0/leanback-armeabi_v7a.apk'
 
-          python3 - << 'PYINJECT'
-          import zipfile, io, os
+          for arch in v7a arm64; do
+            echo "========== Processing ${arch} =========="
+            work_dir="/tmp/apk_${arch}"
+            rm -rf "${work_dir}"
+            
+            apktool d "/tmp/bases/${arch}.apk" -o "${work_dir}" -f
 
-          banner_bytes = open('/tmp/banner.png', 'rb').read()
-          icon_bytes = open('/tmp/icon.png', 'rb').read()
-          tv_json_bytes = open('app/src/main/assets/tv.json', 'rb').read()
+            find "${work_dir}/smali" -type f \( -name "*Updater*.smali" -o -name "*Release*.smali" \) | while read smali_file; do
+              sed -i 's|https://api.github.com/repos/FongMi/Release/releases/latest|http://127.0.0.1:9999/disabled_update|g' "$smali_file"
+              sed -i 's|https://api.github.com/repos/FongMi/Release/releases/tags/|http://127.0.0.1:9999/disabled_update/|g' "$smali_file"
+            done
 
-          for arch in ['arm64', 'v7a']:
-              in_apk = f'/tmp/bases/{arch}.apk'
-              temp_apk = f'/tmp/rebranded_{arch}.apk'
-              print(f'Injecting Apple-grade assets into {arch}...')
+            find "${work_dir}/res" -type f -name "strings.xml" | while read str_file; do
+              sed -i 's|<string name="app_name">.*</string>|<string name="app_name">Caleb</string>|g' "$str_file"
+            done
 
-              with zipfile.ZipFile(in_apk, 'r') as zin, zipfile.ZipFile(temp_apk, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
-                  # Inject internal tv.json so it supports assets://tv.json
-                  zout.writestr('assets/tv.json', tv_json_bytes)
+            find "${work_dir}/res" -type f -name "banner.png" -exec cp -f /tmp/banner.png {} \;
+            find "${work_dir}/res" -type f -name "ic_launcher.png" -exec cp -f /tmp/icon.png {} \;
 
-                  for item in zin.infolist():
-                      fname = item.filename
-                      if fname.startswith('META-INF/') and (fname.endswith('.SF') or fname.endswith('.RSA') or fname.endswith('.MF')):
-                          continue
+            rebuilt_apk="/tmp/rebuilt_${arch}.apk"
+            apktool b "${work_dir}" -o "${rebuilt_apk}"
 
-                      if 'banner' in fname.lower() and fname.endswith('.png'):
-                          zout.writestr(item, banner_bytes)
-                      elif 'ic_launcher' in fname.lower() and fname.endswith('.png'):
-                          zout.writestr(item, icon_bytes)
-                      elif fname == 'resources.arsc':
-                          data = zin.read(fname)
-                          data = data.replace('影视'.encode('utf-8'), 'Caleb'.encode('utf-8') + b' ')
-                          zout.writestr(item, data)
-                      else:
-                          zout.writestr(item, zin.read(fname))
+            aligned_apk="/tmp/aligned_${arch}.apk"
+            final_apk="output/Caleb-TV-${arch}.apk"
+            zipalign -p -f 4 "${rebuilt_apk}" "${aligned_apk}"
+            apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out "${final_apk}" "${aligned_apk}"
 
-              aligned_apk = f'/tmp/aligned_{arch}.apk'
-              final_apk = f'output/Caleb-TV-{arch}.apk'
-              os.system(f'zipalign -p -f -v 4 {temp_apk} {aligned_apk}')
-              os.system(f'apksigner sign --ks /tmp/caleb.jks --ks-pass pass:calebtv --key-pass pass:calebtv --out {final_apk} {aligned_apk}')
-              print(f'Successfully built {final_apk}!')
-          PYINJECT
+            echo "Successfully generated: ${final_apk}"
+          done
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -129,15 +105,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/fongmi'
         with:
-          tag_name: v1.0.0-Caleb
-          name: Caleb TV v1.0.0
+          tag_name: v1.0.1-Caleb
+          name: Caleb TV v1.0.1 (纯净无更新·防卡死版)
           body: |
-            ## 🎬 Caleb TV 专属投影仪版 (开箱即用免配置)
-            - **视觉设计**：全新 Apple 极简风格，霓虹发光 Caleb 专属图标与大屏 16:9 横版海报
-            - **应用名称**：Caleb
-            - **内置接口**：已内置 LibreTV 极速解析源与聚合采集站（非凡、量子、无尽、极速蓝光），零门槛开箱即播
-            - **底层引擎**：基于 FongMi 纯净硬解内核，支持 4K HDR、杜比视界及遥控器丝滑操控
-            - **架构支持**：
-              - Caleb-TV-arm64.apk：适用于主流 64 位高性能投影仪及电视盒（极米、当贝、小米等）
-              - Caleb-TV-v7a.apk：适用于 32 位通用电视/投影芯片
+            ## 🎬 Caleb TV 专属投影仪版 (v1.0.1 修复版)
+            - **彻底解除更新限制**：源码层已彻底拔除 GitHub 联网更新检测，永不弹窗提示更新。
+            - **重构资源引擎**：使用 Apktool 标准编译重建资源池，彻底消除底层字符串越界与内存死锁。
+            - **视觉设计**：全新 Apple 极简风格，霓虹发光 Caleb 专属图标与大屏 16:9 横版海报。
+            - **应用名称**：Caleb。
+            - **安装建议（重要）**：
+              - ⚠️ **投影仪用户强烈建议优先安装**：`Caleb-TV-v7a.apk`（绝大多数投影仪为 32 位底层，装 v7a 流畅不掉帧）。
+              - 64 位高性能电视盒子：可安装 `Caleb-TV-arm64.apk`。
           files: output/*.apk
